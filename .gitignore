@@ -1,0 +1,107 @@
+# ===========================================
+# UNIVERSAL .gitignore (Node/TS + Rust + Python + Java)
+# ===========================================
+
+### NODE / JAVASCRIPT / TYPESCRIPT ###
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+logs/
+*.log
+*.pid
+*.seed
+*.pid.lock
+
+# Build output
+dist/
+build/
+.cache/
+.eslintcache
+.next/
+nuxt/
+out/
+coverage/
+.vite/
+vite.config.ts.timestamp-*
+storybook-static/
+
+# TypeScript
+*.tsbuildinfo
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+
+### RUST ###
+/target/
+/Cargo.lock
+**/*.rs.bk
+
+
+### PYTHON ###
+__pycache__/
+*.py[cod]
+*.so
+build/
+dist/
+.eggs/
+*.egg-info/
+.venv/
+venv/
+env/
+ENV/
+*.spec
+.pytest_cache/
+.coverage*
+.hypothesis/
+.ipynb_checkpoints
+.python-version
+.mypy_cache/
+
+
+### JAVA ###
+*.class
+*.jar
+*.war
+*.ear
+*.log
+.idea/
+.vscode/
+out/
+bin/
+build/
+target/
+.gradle/
+.mvn/
+*.iml
+nbproject/private/
+.classpath
+.project
+.settings/
+
+
+### OS / SYSTEM ###
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+
+### EDITORS ###
+*~
+*.swp
+*.swo
+*.bak
+*.tmp
+*.orig
+.vscode/
+.idea/
+
+
+### GIT META ###
+.gitignore~
+
