@@ -74,6 +74,7 @@ export const chatGroups = pgTable("chat_groups", {
   createdById: varchar("created_by_id").references(() => users.id).notNull(),
   isPrivate: boolean("is_private").default(false),
   backgroundImageUrl: text("background_image_url"),
+  mobileImageIndex: integer("mobile_image_index"),
   memberLimit: integer("member_limit").default(100),
   memberCount: integer("member_count").default(1),
   createdAt: timestamp("created_at").defaultNow(),
@@ -125,6 +126,7 @@ export const meetingSuggestions = pgTable("meeting_suggestions", {
   status: text("status").default("accepted").notNull(), // 'pending', 'accepted', 'rejected', 'cancelled'
   isPrivate: boolean("is_private").default(false),
   backgroundImageUrl: text("background_image_url"),
+  mobileImageIndex: integer("mobile_image_index"),
   participants: json("participants").$type<string[]>().default([]), // Array of user IDs
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),

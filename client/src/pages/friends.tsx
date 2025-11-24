@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Users, UserPlus, Search, MessageCircle } from "lucide-react";
+import { Users, UserPlus, Search, MessageCircle, Calendar as CalendarIcon, UsersIcon } from "lucide-react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,36 +10,43 @@ import { NavigationMenu } from "@/components/navigation-menu";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/useAuth";
-import type { User as UserType, Friendship } from "@shared/schema";
+import type { User as UserType, Friendship, MeetingSuggestion, ChatGroup } from "@shared/schema";
 
 export default function Friends() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState<"friends" | "requests" | "search">("friends");
+  const [activeTab, setActiveTab] = useState<"friends" | "requests" | "search" | "users">("friends");
 
-  // Fetch friends
   const { data: friends = [], isLoading: friendsLoading } = useQuery<UserType[]>({
     queryKey: ['/api/friends'],
   });
 
-  // Fetch friend requests
   const { data: friendRequests = [], isLoading: requestsLoading } = useQuery<Friendship[]>({
     queryKey: ['/api/friend-requests'],
   });
 
-  // Fetch sent requests
   const { data: sentRequests = [], isLoading: sentLoading } = useQuery<Friendship[]>({
     queryKey: ['/api/friend-requests/sent'],
   });
 
-  // Search users
   const { data: searchResults = [], isLoading: searchLoading } = useQuery<UserType[]>({
     queryKey: ['/api/search/users', searchQuery],
     enabled: searchQuery.length > 0,
   });
 
-  // Send friend request mutation
+  const { data: allUsers = [], isLoading: usersLoading } = useQuery<UserType[]>({
+    queryKey: ['/api/users/all'],
+  });
+
+  const { data: allMeetings = [] } = useQuery<MeetingSuggestion[]>({
+    queryKey: ['/api/meetings/all'],
+  });
+
+  const { data: allGroups = [] } = useQuery<ChatGroup[]>({
+    queryKey: ['/api/chat-groups/all'],
+  });
+
   const sendRequestMutation = useMutation({
     mutationFn: async (addresseeId: string) => {
       await apiRequest('POST', '/api/friend-requests', { addresseeId });
@@ -60,7 +67,6 @@ export default function Friends() {
     },
   });
 
-  // Accept friend request mutation
   const acceptRequestMutation = useMutation({
     mutationFn: async (requestId: number) => {
       await apiRequest('POST', `/api/friend-requests/${requestId}/accept`);
@@ -82,7 +88,6 @@ export default function Friends() {
     },
   });
 
-  // Reject friend request mutation
   const rejectRequestMutation = useMutation({
     mutationFn: async (requestId: number) => {
       await apiRequest('POST', `/api/friend-requests/${requestId}/reject`);
@@ -103,7 +108,6 @@ export default function Friends() {
     },
   });
 
-  // Remove friend mutation
   const removeFriendMutation = useMutation({
     mutationFn: async (friendId: string) => {
       await apiRequest('DELETE', `/api/friends/${friendId}`);
@@ -146,9 +150,16 @@ export default function Friends() {
     return friends.some(friend => friend.id === userId);
   };
 
+  const getUserMeetings = (userId: string) => {
+    return allMeetings.filter(m => m.suggestedById === userId);
+  };
+
+  const getUserGroups = (userId: string) => {
+    return allGroups.filter(g => g.createdById === userId);
+  };
+
   return (
     <div className="bg-background min-h-screen">
-      {/* Header */}
       <header className="bg-card shadow-sm border-b border-border sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="h-16">
@@ -157,9 +168,7 @@ export default function Friends() {
         </div>
       </header>
 
-      {/* Main Content */}
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
-        {/* Page Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
           <div>
             <h2 className="text-2xl sm:text-3xl font-bold text-foreground">Friends</h2>
@@ -169,7 +178,6 @@ export default function Friends() {
           </div>
         </div>
 
-        {/* Tabs */}
         <div className="flex flex-wrap gap-2 mb-6">
           <Button
             variant={activeTab === "friends" ? "default" : "outline"}
@@ -195,9 +203,109 @@ export default function Friends() {
             <Search className="h-4 w-4" />
             Find Friends
           </Button>
+          <Button
+            variant={activeTab === "users" ? "default" : "outline"}
+            onClick={() => setActiveTab("users")}
+            className="flex items-center gap-2"
+          >
+            <Users className="h-4 w-4" />
+            All Users ({allUsers.length})
+          </Button>
         </div>
 
-        {/* Search Tab */}
+        {activeTab === "users" && (
+          <div className="space-y-4">
+            {usersLoading ? (
+              <div className="text-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+                <p className="text-muted-foreground mt-2">Loading users...</p>
+              </div>
+            ) : allUsers.length > 0 ? (
+              <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
+                {allUsers.map((userItem) => {
+                  const userMeetings = getUserMeetings(userItem.id);
+                  const userGroups = getUserGroups(userItem.id);
+                  
+                  return (
+                    <Card key={userItem.id}>
+                      <CardHeader className="pb-3">
+                        <div className="flex items-center space-x-4">
+                          <Avatar className="h-12 w-12">
+                            <AvatarFallback className="bg-primary text-primary-foreground">
+                              {getInitials(userItem)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <CardTitle className="text-lg">
+                              {getUserDisplayName(userItem)}
+                            </CardTitle>
+                            <p className="text-muted-foreground text-sm">{userItem.email}</p>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        {userMeetings.length > 0 && (
+                          <div>
+                            <h4 className="text-sm font-medium flex items-center gap-2 mb-2">
+                              <CalendarIcon className="h-4 w-4" />
+                              Meetings
+                            </h4>
+                            <div className="flex flex-wrap gap-2">
+                              {userMeetings.map((meeting) => (
+                                <Button
+                                  key={meeting.id}
+                                  variant="outline"
+                                  size="sm"
+                                  className="text-xs h-7"
+                                  onClick={() => window.location.href = `/meetings/${meeting.id}`}
+                                >
+                                  {meeting.title}
+                                </Button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {userGroups.length > 0 && (
+                          <div>
+                            <h4 className="text-sm font-medium flex items-center gap-2 mb-2">
+                              <UsersIcon className="h-4 w-4" />
+                              Groups
+                            </h4>
+                            <div className="flex flex-wrap gap-2">
+                              {userGroups.map((group) => (
+                                <Button
+                                  key={group.id}
+                                  variant="outline"
+                                  size="sm"
+                                  className="text-xs h-7"
+                                  onClick={() => window.location.href = `/groups/${group.id}`}
+                                >
+                                  {group.name}
+                                </Button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {userMeetings.length === 0 && userGroups.length === 0 && (
+                          <p className="text-sm text-muted-foreground">No meetings or groups yet</p>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-foreground mb-2">No users found</h3>
+                <p className="text-muted-foreground">
+                  There are no other users on the platform yet
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
         {activeTab === "search" && (
           <div className="space-y-4">
             <div className="relative">
@@ -271,7 +379,6 @@ export default function Friends() {
           </div>
         )}
 
-        {/* Friends Tab */}
         {activeTab === "friends" && (
           <div className="space-y-4">
             {friendsLoading ? (
@@ -333,7 +440,6 @@ export default function Friends() {
           </div>
         )}
 
-        {/* Requests Tab */}
         {activeTab === "requests" && (
           <div className="space-y-4">
             {requestsLoading ? (

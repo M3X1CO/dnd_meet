@@ -141,6 +141,15 @@ export interface IStorage {
   removeMeetingParticipant(meetingId: number, userId: string): Promise<void>;
   getMeetingParticipants(meetingId: number): Promise<MeetingParticipant[]>;
 
+  // Public visibility operations
+  getAllMeetings(): Promise<MeetingSuggestion[]>;
+  getAllChatGroups(): Promise<ChatGroup[]>;
+  getAllUsers(): Promise<User[]>;
+  joinMeeting(meetingId: number, userId: string): Promise<void>;
+  leaveMeeting(meetingId: number, userId: string): Promise<void>;
+  joinChatGroup(groupId: number, userId: string): Promise<void>;
+  leaveChatGroup(groupId: number, userId: string): Promise<void>;
+
   // ================================
   // Calendar Operations
   // ================================
@@ -454,9 +463,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createChatGroup(group: InsertChatGroup): Promise<ChatGroup> {
+    const mobileImageIndex = Math.floor(Math.random() * 10);
+    
     const [newGroup] = await db
       .insert(chatGroups)
-      .values(group)
+      .values({
+        ...group,
+        mobileImageIndex,
+      })
       .returning();
     
     // Add creator as admin
@@ -583,9 +597,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createMeetingSuggestion(suggestion: InsertMeetingSuggestion): Promise<MeetingSuggestion> {
+    const mobileImageIndex = Math.floor(Math.random() * 10);
+    
     const [newSuggestion] = await db
       .insert(meetingSuggestions)
-      .values(suggestion)
+      .values({
+        ...suggestion,
+        mobileImageIndex,
+      })
       .returning();
     return newSuggestion;
   }
@@ -1245,6 +1264,108 @@ export class DatabaseStorage implements IStorage {
     }
     // Delete the group
     await db.delete(chatGroups).where(eq(chatGroups.id, groupId));
+  }
+  // Public visibility operations
+  async getAllMeetings(): Promise<MeetingSuggestion[]> {
+    const allMeetings = await db
+      .select()
+      .from(meetingSuggestions)
+      .orderBy(desc(meetingSuggestions.createdAt));
+    
+    const openMeetings = [];
+    for (const meeting of allMeetings) {
+      const participantCount = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(meetingParticipants)
+        .where(eq(meetingParticipants.meetingId, meeting.id));
+      
+      if (participantCount[0].count < 100) {
+        openMeetings.push(meeting);
+      }
+    }
+    
+    return openMeetings;
+  }
+
+  async getAllChatGroups(): Promise<ChatGroup[]> {
+    const allGroups = await db
+      .select()
+      .from(chatGroups)
+      .where(sql`${chatGroups.memberCount} < 100`)
+      .orderBy(desc(chatGroups.createdAt));
+    
+    return allGroups;
+  }
+
+  async getAllUsers(): Promise<User[]> {
+    return await db
+      .select()
+      .from(users)
+      .where(eq(users.isActive, true))
+      .orderBy(users.firstName, users.lastName);
+  }
+
+  async joinMeeting(meetingId: number, userId: string): Promise<void> {
+    const existing = await db
+      .select()
+      .from(meetingParticipants)
+      .where(and(
+        eq(meetingParticipants.meetingId, meetingId),
+        eq(meetingParticipants.userId, userId)
+      ));
+    
+    if (existing.length === 0) {
+      await db.insert(meetingParticipants).values({
+        meetingId,
+        userId,
+      });
+    }
+  }
+
+  async leaveMeeting(meetingId: number, userId: string): Promise<void> {
+    await db
+      .delete(meetingParticipants)
+      .where(and(
+        eq(meetingParticipants.meetingId, meetingId),
+        eq(meetingParticipants.userId, userId)
+      ));
+  }
+
+  async joinChatGroup(groupId: number, userId: string): Promise<void> {
+    const existing = await db
+      .select()
+      .from(chatGroupMembers)
+      .where(and(
+        eq(chatGroupMembers.groupId, groupId),
+        eq(chatGroupMembers.userId, userId)
+      ));
+    
+    if (existing.length === 0) {
+      await db.insert(chatGroupMembers).values({
+        groupId,
+        userId,
+        role: "member",
+      });
+      
+      await db
+        .update(chatGroups)
+        .set({ memberCount: sql`${chatGroups.memberCount} + 1` })
+        .where(eq(chatGroups.id, groupId));
+    }
+  }
+
+  async leaveChatGroup(groupId: number, userId: string): Promise<void> {
+    await db
+      .delete(chatGroupMembers)
+      .where(and(
+        eq(chatGroupMembers.groupId, groupId),
+        eq(chatGroupMembers.userId, userId)
+      ));
+    
+    await db
+      .update(chatGroups)
+      .set({ memberCount: sql`${chatGroups.memberCount} - 1` })
+      .where(eq(chatGroups.id, groupId));
   }
 }
 

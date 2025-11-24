@@ -1,21 +1,21 @@
 import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { UnifiedMeetingModal } from "@/components/unified-meeting-modal";
-import { MeetingResponseCard } from "@/components/meeting-response-card";
 import { NavigationMenu } from "@/components/navigation-menu";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
-import { Calendar, Plus, Clock, MapPin, Users } from "lucide-react";
+import { Calendar, Plus, Clock, MapPin, Users, UserPlus, UserMinus } from "lucide-react";
 import { format } from "date-fns";
-import type { MeetingSuggestion, MeetingResponse, ChatGroup } from "@shared/schema";
+import type { MeetingSuggestion, ChatGroup } from "@shared/schema";
 
 export default function Meetings() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const { user, isAuthenticated, isLoading } = useAuth();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -32,30 +32,60 @@ export default function Meetings() {
     }
   }, [isAuthenticated, isLoading, toast]);
 
-  const { data: chatGroups = [], isLoading: isLoadingGroups } = useQuery<ChatGroup[]>({
-    queryKey: ["/api/chat-groups"],
+  const { data: allMeetings = [], isLoading: isLoadingMeetings } = useQuery<MeetingSuggestion[]>({
+    queryKey: ["/api/meetings/all"],
     enabled: isAuthenticated,
     retry: false,
   });
 
-  const { data: meetings = [], isLoading: isLoadingMeetings } = useQuery<MeetingSuggestion[]>({
-    queryKey: ["/api/meetings"],
+  const { data: userMeetings = [] } = useQuery<MeetingSuggestion[]>({
+    queryKey: ["/api/meetings/user"],
     enabled: isAuthenticated,
     retry: false,
   });
 
-  const { data: responses = [] } = useQuery<MeetingResponse[]>({
-    queryKey: ["/api/meetings/responses"],
-    enabled: isAuthenticated,
-    retry: false,
+  const joinMutation = useMutation({
+    mutationFn: async (meetingId: number) => {
+      const res = await fetch(`/api/meetings/${meetingId}/join`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to join meeting");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/meetings/all"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/meetings/user"] });
+      toast({ title: "Joined meeting successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to join meeting", variant: "destructive" });
+    },
   });
 
-  const getResponsesForMeeting = (meetingId: number) => {
-    return responses.filter(r => r.meetingId === meetingId);
-  };
+  const leaveMutation = useMutation({
+    mutationFn: async (meetingId: number) => {
+      const res = await fetch(`/api/meetings/${meetingId}/leave`, {
+        method: "POST",
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed to leave meeting");
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/meetings/all"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/meetings/user"] });
+      toast({ title: "Left meeting successfully" });
+    },
+    onError: () => {
+      toast({ title: "Failed to leave meeting", variant: "destructive" });
+    },
+  });
 
-  // Sort meetings by date (closest first)
-  const sortedMeetings = [...meetings].sort((a, b) => 
+  const userMeetingIds = new Set(userMeetings.map(m => m.id));
+  const userCreatedMeetings = userMeetings.filter(m => m.suggestedById === user?.id);
+
+  const sortedMeetings = [...allMeetings].sort((a, b) => 
     new Date(a.proposedDateTime).getTime() - new Date(b.proposedDateTime).getTime()
   );
 
@@ -63,7 +93,7 @@ export default function Meetings() {
     new Date(m.proposedDateTime) >= new Date() && m.status !== "rejected"
   );
 
-  if (isLoading || isLoadingGroups || isLoadingMeetings) {
+  if (isLoading || isLoadingMeetings) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
         <div className="text-center">
@@ -86,14 +116,21 @@ export default function Meetings() {
             <NavigationMenu 
               currentPage="/meetings" 
               actionButton={
-                <Button 
-                  size="sm" 
-                  onClick={() => setIsCreateModalOpen(true)}
-                  className="flex items-center gap-1 sm:gap-2"
-                >
-                  <Plus className="h-4 w-4" />
-                  <span>New</span>
-                </Button>
+                userCreatedMeetings.length < 4 ? (
+                  <Button 
+                    size="sm" 
+                    onClick={() => setIsCreateModalOpen(true)}
+                    className="flex items-center gap-1 sm:gap-2"
+                  >
+                    <Plus className="h-4 w-4" />
+                    <span>New</span>
+                  </Button>
+                ) : (
+                  <Button size="sm" disabled className="flex items-center gap-1 sm:gap-2">
+                    <Plus className="h-4 w-4" />
+                    <span>Limit Reached (4/4)</span>
+                  </Button>
+                )
               }
             />
           </div>
@@ -107,27 +144,30 @@ export default function Meetings() {
               <Calendar className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
               <h3 className="text-xl font-semibold text-foreground mb-2">No Upcoming Meetings</h3>
               <p className="text-muted-foreground">
-                Use the "New" button above to suggest a meeting time with your friends or group members.
+                Use the "New" button above to create a meeting.
               </p>
             </CardContent>
           </Card>
         ) : (
           <div>
-            <h2 className="text-2xl font-bold text-foreground mb-4">Upcoming Meetings</h2>
+            <h2 className="text-2xl font-bold text-foreground mb-4">All Upcoming Meetings</h2>
             <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {upcomingMeetings.map((meeting) => {
                 const meetingDate = new Date(meeting.proposedDateTime);
                 const isCreator = meeting.suggestedById === user?.id;
+                const isMember = userMeetingIds.has(meeting.id);
                 const statusColor = 
                   meeting.status === "accepted" ? "bg-green-500/10 text-green-500 border-green-500/50" :
                   meeting.status === "pending" ? "bg-yellow-500/10 text-yellow-500 border-yellow-500/50" :
                   "bg-gray-500/10 text-gray-500 border-gray-500/50";
 
                 return (
-		    <Card key={meeting.id} className="hover:shadow-lg transition-all hover:scale-[1.02] cursor-pointer" onClick={() => window.location.href = `/meetings/${meeting.id}`}>
+                  <Card key={meeting.id} className={`hover:shadow-lg transition-all ${isCreator ? 'ring-2 ring-primary/20' : ''}`}>
                     <CardHeader className="pb-3">
                       <div className="flex items-start justify-between mb-2">
-                        <CardTitle className="text-base truncate pr-2">{meeting.title}</CardTitle>
+                        <CardTitle className="text-base truncate pr-2 cursor-pointer hover:underline" onClick={() => window.location.href = `/meetings/${meeting.id}`}>
+                          {meeting.title}
+                        </CardTitle>
                         <Badge variant="outline" className={`text-xs ${statusColor}`}>
                           {meeting.status}
                         </Badge>
@@ -154,12 +194,38 @@ export default function Meetings() {
                       <div className="flex items-center justify-between pt-2">
                         <Badge variant="secondary" className="text-xs">
                           <Users className="h-3 w-3 mr-1" />
-                          {meeting.participants?.length || 0} invited
+                          {meeting.participants?.length || 0}
                         </Badge>
                         {isCreator && (
                           <Badge variant="outline" className="text-xs">Creator</Badge>
                         )}
                       </div>
+                      {!isCreator && (
+                        <div className="pt-2">
+                          {isMember ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="w-full"
+                              onClick={() => leaveMutation.mutate(meeting.id)}
+                              disabled={leaveMutation.isPending}
+                            >
+                              <UserMinus className="h-3 w-3 mr-1" />
+                              Leave
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              className="w-full"
+                              onClick={() => joinMutation.mutate(meeting.id)}
+                              disabled={joinMutation.isPending}
+                            >
+                              <UserPlus className="h-3 w-3 mr-1" />
+                              Join
+                            </Button>
+                          )}
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 );

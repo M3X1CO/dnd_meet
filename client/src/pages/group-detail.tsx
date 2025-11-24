@@ -12,10 +12,12 @@ import { NavigationMenu } from "@/components/navigation-menu";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { useMobile } from "@/hooks/use-mobile";
 import { Users, ArrowLeft, Edit, Crown, MessageCircle, Calendar, UserPlus, Lock, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { useState } from "react";
 import type { ChatGroup, User as UserType } from "@shared/schema";
+import { MOBILE_DEFAULT_IMAGES } from "@/lib/constants";
 
 export default function GroupDetail() {
   const params = useParams();
@@ -23,6 +25,7 @@ export default function GroupDetail() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const isMobile = useMobile();
 
   const [isEditMode, setIsEditMode] = useState(false);
   const [editName, setEditName] = useState("");
@@ -90,6 +93,16 @@ export default function GroupDetail() {
     }
   };
 
+  const getBackgroundImage = () => {
+    if (!group) return null;
+    
+    if (isMobile && group.mobileImageIndex !== null && group.mobileImageIndex !== undefined) {
+      return MOBILE_DEFAULT_IMAGES[group.mobileImageIndex];
+    }
+    
+    return group.backgroundImageUrl;
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -118,6 +131,7 @@ export default function GroupDetail() {
 
   const isCreator = group.createdById === user?.id;
   const isMember = members.some((m) => m.id === user?.id);
+  const backgroundImage = getBackgroundImage();
 
   return (
     <div className="min-h-screen bg-background">
@@ -136,10 +150,10 @@ export default function GroupDetail() {
         </Button>
 
         <Card className="relative overflow-hidden">
-          {group.backgroundImageUrl && (
+          {backgroundImage && (
             <div className="absolute inset-0 z-0">
               <img
-                src={group.backgroundImageUrl}
+                src={backgroundImage}
                 alt="Group background"
                 className="w-full h-full object-cover opacity-0 transition-opacity duration-700 ease-in-out"
                 onLoad={(e) => {
@@ -299,93 +313,95 @@ export default function GroupDetail() {
               />
             </div>
 
-            <div className="space-y-2">
-              <Label className="flex items-center gap-2">
-                <Edit className="h-4 w-4" />
-                Update Background Image
-              </Label>
+            {!isMobile && (
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <Edit className="h-4 w-4" />
+                  Update Background Image
+                </Label>
 
-              <Input
-                type="file"
-                accept="image/*"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
+                <Input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
 
-                  if (file.size > 5 * 1024 * 1024) {
-                    toast({
-                      title: "Error",
-                      description: "Image must be less than 5MB",
-                      variant: "destructive",
-                    });
-                    return;
-                  }
+                    if (file.size > 5 * 1024 * 1024) {
+                      toast({
+                        title: "Error",
+                        description: "Image must be less than 5MB",
+                        variant: "destructive",
+                      });
+                      return;
+                    }
 
-                  if (!file.type.startsWith("image/")) {
-                    toast({
-                      title: "Error",
-                      description: "Please select a valid image file",
-                      variant: "destructive",
-                    });
-                    return;
-                  }
+                    if (!file.type.startsWith("image/")) {
+                      toast({
+                        title: "Error",
+                        description: "Please select a valid image file",
+                        variant: "destructive",
+                      });
+                      return;
+                    }
 
-                  const reader = new FileReader();
-                  reader.onloadend = () => {
-                    const img = new Image();
-                    img.onload = () => {
-                      const canvas = document.createElement('canvas');
-                      const maxWidth = 1200;
-                      const maxHeight = 500;
-                      
-                      let width = img.width;
-                      let height = img.height;
-                      
-                      if (width > maxWidth || height > maxHeight) {
-                        const ratio = Math.min(maxWidth / width, maxHeight / height);
-                        width = width * ratio;
-                        height = height * ratio;
-                      }
-                      
-                      canvas.width = width;
-                      canvas.height = height;
-                      
-                      const ctx = canvas.getContext('2d');
-                      ctx?.drawImage(img, 0, 0, width, height);
-                      
-                      const compressedBase64 = canvas.toDataURL('image/jpeg', 0.8);
-                      setEditImage(compressedBase64);
+                    const reader = new FileReader();
+                    reader.onloadend = () => {
+                      const img = new Image();
+                      img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        const maxWidth = 1200;
+                        const maxHeight = 500;
+                        
+                        let width = img.width;
+                        let height = img.height;
+                        
+                        if (width > maxWidth || height > maxHeight) {
+                          const ratio = Math.min(maxWidth / width, maxHeight / height);
+                          width = width * ratio;
+                          height = height * ratio;
+                        }
+                        
+                        canvas.width = width;
+                        canvas.height = height;
+                        
+                        const ctx = canvas.getContext('2d');
+                        ctx?.drawImage(img, 0, 0, width, height);
+                        
+                        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.8);
+                        setEditImage(compressedBase64);
+                      };
+                      img.src = reader.result as string;
                     };
-                    img.src = reader.result as string;
-                  };
-                  reader.readAsDataURL(file);
-                }}
-                className="cursor-pointer"
-              />
+                    reader.readAsDataURL(file);
+                  }}
+                  className="cursor-pointer"
+                />
 
-              <p className="text-xs text-muted-foreground">Upload a new background image (max 5MB). Recommended: 1200×500px or 2.4:1 aspect ratio.</p>
-                
-              {(editImage || group.backgroundImageUrl) && (
-                <div className="relative w-full h-40 rounded-lg overflow-hidden border">
-                  <img
-                    src={editImage || group.backgroundImageUrl!}
-                    alt="Background preview"
-                    className="w-full h-full object-cover"
-                  />
-                  {editImage && (
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      size="sm"
-                      className="absolute top-2 right-2"
-                      onClick={() => setEditImage(null)}
-                    >
-                      Remove New
-                    </Button>
-                  )}
-                </div>
-              )}
-            </div>
+                <p className="text-xs text-muted-foreground">Upload a new background image (max 5MB). Recommended: 1200×500px or 2.4:1 aspect ratio.</p>
+                  
+                {(editImage || group.backgroundImageUrl) && (
+                  <div className="relative w-full h-40 rounded-lg overflow-hidden border">
+                    <img
+                      src={editImage || group.backgroundImageUrl!}
+                      alt="Background preview"
+                      className="w-full h-full object-cover"
+                    />
+                    {editImage && (
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        className="absolute top-2 right-2"
+                        onClick={() => setEditImage(null)}
+                      >
+                        Remove New
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="flex items-center space-x-2">
               <input
@@ -420,7 +436,7 @@ export default function GroupDetail() {
                   isPrivate,
                 });
 
-                if (editImage) {
+                if (editImage && !isMobile) {
                   try {
                     await apiRequest("POST", `/api/chat-groups/${groupId}/background`, {
                       image: editImage,
@@ -444,4 +460,3 @@ export default function GroupDetail() {
     </div>
   );
 }
-

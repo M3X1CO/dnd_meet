@@ -6,33 +6,24 @@ import { requireAuth, type AuthRequest, hashPassword, comparePassword, generateT
 import { uploadToCloudinary } from "./cloudinary";
 
 import { 
-  // User and auth schemas
   insertUserSchema,
   insertUserSettingsSchema,
   insertFriendshipSchema,
-  
-  // Chat and meeting schemas
   insertChatGroupSchema,
   insertChatMessageSchema,
   insertMeetingSuggestionSchema,
   insertMeetingResponseSchema,
   insertMeetingParticipantSchema,
-  
-  // Calendar schemas
   insertCalendarConnectionSchema, 
   insertCalendarSchema, 
   insertEventSchema,
   insertConflictSchema,
-  
-  // Calendar sharing schemas
   insertCalendarShareSchema,
   insertCalendarCollaborationSchema,
   insertCollaborationMemberSchema,
   insertCollaborationCalendarSchema,
   insertEventCommentSchema,
   insertEventChangeLogSchema,
-  
-  // Tag schemas
   insertTagSchema,
   insertChatTagSchema,
   insertMeetingTagSchema
@@ -52,7 +43,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Email and password required" });
       }
 
-      // Check if user exists
       const existingUsers = await storage.searchUsersByTags([], undefined);
       const existingUser = existingUsers.find(u => u.email === email);
       
@@ -60,10 +50,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "User already exists" });
       }
 
-      // Hash password
       const passwordHash = await hashPassword(password);
 
-      // Create user
       const user = await storage.upsertUser({
         id: crypto.randomUUID(),
         email,
@@ -72,7 +60,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         lastName: lastName || null,
       });
 
-      // Generate token
       const token = generateToken(user.id, user.email);
 
       res.json({
@@ -98,7 +85,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "Email and password required" });
       }
 
-      // Find user
       const users = await storage.searchUsersByTags([], undefined);
       const user = users.find(u => u.email === email);
 
@@ -106,14 +92,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: "Invalid credentials" });
       }
 
-      // Verify password
       const isValid = await comparePassword(password, user.passwordHash);
 
       if (!isValid) {
         return res.status(401).json({ error: "Invalid credentials" });
       }
 
-      // Generate token
       const token = generateToken(user.id, user.email);
 
       res.json({
@@ -154,10 +138,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // ================================
-  // PROTECTED ROUTES (Require Auth)
-  // ================================
-  
   app.get('/api/auth/user', requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.userId;
@@ -170,8 +150,87 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ================================
-  // Friend Management Routes
+  // USER ROUTES
   // ================================
+  
+  app.get('/api/users/all', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const currentUserId = req.user!.userId;
+      const allUsers = await storage.getAllUsers();
+      const users = allUsers.filter(u => u.id !== currentUserId);
+      res.json(users);
+    } catch (error) {
+      console.error("Error fetching all users:", error);
+      res.status(500).json({ message: "Failed to fetch users" });
+    }
+  });
+
+  app.put('/api/profile', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.userId;
+      const user = await storage.updateUserProfile(userId, req.body);
+      res.setHeader('Content-Type', 'application/json');
+      res.status(200).json(user);
+    } catch (error: any) {
+      console.error("Profile update error:", error);
+      res.setHeader('Content-Type', 'application/json');
+      res.status(500).json({ message: "Failed to update profile", error: error.message });
+    }
+  });
+
+  app.post('/api/users/search', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { tags, location } = req.body;
+      const users = await storage.searchUsersByTags(tags || [], location);
+      res.json(users);
+    } catch (error) {
+      console.error("Error searching users:", error);
+      res.status(500).json({ message: "Failed to search users" });
+    }
+  });
+
+  app.post('/api/users/search/location', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { latitude, longitude, radius } = req.body;
+      const users = await storage.searchUsersByLocation(latitude, longitude, radius);
+      res.json(users);
+    } catch (error) {
+      console.error("Error searching users by location:", error);
+      res.status(500).json({ message: "Failed to search users by location" });
+    }
+  });
+
+  // ================================
+  // SETTINGS ROUTES
+  // ================================
+
+  app.get('/api/settings', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.userId;
+      const settings = await storage.getUserSettings(userId);
+      res.json(settings);
+    } catch (error) {
+      console.error("Error fetching user settings:", error);
+      res.status(500).json({ message: "Failed to fetch settings" });
+    }
+  });
+
+  app.put('/api/settings', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.userId;
+      const settingsData = { ...req.body, userId };
+      const updatedSettings = await storage.upsertUserSettings(settingsData);
+      res.json(updatedSettings);
+    } catch (error) {
+      console.error("Error updating user settings:", error);
+      res.status(500).json({ message: "Failed to update settings" });
+    }
+  });
+
+  // ================================
+  // FRIEND ROUTES
+  // ================================
+  
   app.get('/api/friends', requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.userId;
@@ -180,6 +239,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching friends:", error);
       res.status(500).json({ message: "Failed to fetch friends" });
+    }
+  });
+
+  app.delete('/api/friends/:id', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.userId;
+      const friendId = req.params.id;
+      await storage.removeFriend(userId, friendId);
+      res.status(200).json({ message: "Friend removed" });
+    } catch (error) {
+      console.error("Error removing friend:", error);
+      res.status(500).json({ message: "Failed to remove friend" });
     }
   });
 
@@ -244,81 +315,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.delete('/api/friends/:id', requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const userId = req.user!.userId;
-      const friendId = req.params.id;
-      await storage.removeFriend(userId, friendId);
-      res.status(200).json({ message: "Friend removed" });
-    } catch (error) {
-      console.error("Error removing friend:", error);
-      res.status(500).json({ message: "Failed to remove friend" });
-    }
-  });
-
-  app.get('/api/search/users', requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const { q } = req.query;
-      
-      if (!q || typeof q !== 'string' || q.length < 2) {
-        return res.json([]);
-      }
-      
-      const users = await storage.searchUsersByTags([], q);
-      res.json(users);
-    } catch (error) {
-      console.error("Error searching users:", error);
-      res.status(500).json({ message: "Failed to search users" });
-    }
-  });
-
   // ================================
-  // User Profile & Settings Routes
+  // MEETING ROUTES
   // ================================
-  app.put('/api/profile', requireAuth, async (req: AuthRequest, res) => {
+
+  app.get('/api/meetings', requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.userId;
-      const user = await storage.updateUserProfile(userId, req.body);
-      res.setHeader('Content-Type', 'application/json');
-      res.status(200).json(user);
-    } catch (error: any) {
-      console.error("Profile update error:", error);
-      res.setHeader('Content-Type', 'application/json');
-      res.status(500).json({ message: "Failed to update profile", error: error.message });
+      const meetings = await storage.getAllMeetingsForUser(userId);
+      res.json(meetings);
+    } catch (error) {
+      console.error("Error fetching meetings:", error);
+      res.status(500).json({ message: "Failed to fetch meetings" });
     }
   });
 
-  app.get('/api/settings', requireAuth, async (req: AuthRequest, res) => {
+  app.get('/api/meetings/all', requireAuth, async (req: AuthRequest, res) => {
     try {
-      const userId = req.user!.userId;
-      const settings = await storage.getUserSettings(userId);
-      res.json(settings);
+      const meetings = await storage.getAllMeetings();
+      res.json(meetings);
     } catch (error) {
-      console.error("Error fetching user settings:", error);
-      res.status(500).json({ message: "Failed to fetch settings" });
-    }
-  });
-
-  app.put('/api/settings', requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const userId = req.user!.userId;
-      const settingsData = { ...req.body, userId };
-      const updatedSettings = await storage.upsertUserSettings(settingsData);
-      res.json(updatedSettings);
-    } catch (error) {
-      console.error("Error updating user settings:", error);
-      res.status(500).json({ message: "Failed to update settings" });
-    }
-  });
-
-  app.get('/api/chat-groups', requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const userId = req.user!.userId;
-      const groups = await storage.getChatGroups(userId);
-      res.json(groups);
-    } catch (error) {
-      console.error("Error fetching chat groups:", error);
-      res.status(500).json({ message: "Failed to fetch chat groups" });
+      console.error("Error fetching all meetings:", error);
+      res.status(500).json({ message: "Failed to fetch meetings" });
     }
   });
 
@@ -330,17 +348,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching meetings:", error);
       res.status(500).json({ message: "Failed to fetch meetings" });
-    }
-  });
-
-  app.get('/api/meeting-responses/user', requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const userId = req.user!.userId;
-      const responses = await storage.getAllMeetingResponsesForUser(userId);
-      res.json(responses);
-    } catch (error: any) {
-      console.error("Error fetching meeting responses:", error?.message || error);
-      res.json([]);
     }
   });
 
@@ -360,7 +367,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user!.userId;
       const { participants, chatGroupId, proposedDateTime, image, ...meetingData } = req.body;
       
-      // Check meeting limit
       const existingMeetings = await storage.getAllMeetingsForUser(userId);
       const userCreatedMeetings = existingMeetings.filter(m => m.suggestedById === userId);
       if (userCreatedMeetings.length >= 4) {
@@ -381,7 +387,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         status: "accepted",
       });
 
-      // Upload image if provided
       if (image) {
         try {
           const { uploadImageToCloudinary } = await import('./cloudinary');
@@ -389,19 +394,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           await storage.updateMeetingSuggestion(meeting.id, { backgroundImageUrl: imageUrl });
         } catch (error) {
           console.error("Error uploading meeting background:", error);
-          // Delete the meeting if image upload fails
           await storage.deleteMeetingSuggestion(meeting.id);
           return res.status(500).json({ message: "Failed to upload image" });
         }
       }
 
-      // Always add creator as participant first
       await storage.addMeetingParticipant({
         meetingId: meeting.id,
         userId: userId,
       });
 
-      // Then add other participants
       if (participants && participants.length > 0) {
         for (const participantId of participants) {
           if (participantId !== userId) {
@@ -421,112 +423,206 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get('/api/direct-messages/:otherUserId', requireAuth, async (req: AuthRequest, res) => {
+  app.post('/api/meetings/respond', requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.userId;
-      const otherUserId = req.params.otherUserId;
+      const validatedData = insertMeetingResponseSchema.parse({
+        ...req.body,
+        userId
+      });
+      const response = await storage.respondToMeeting(validatedData);
+      res.status(201).json(response);
+    } catch (error) {
+      console.error("Error responding to meeting:", error);
+      res.status(400).json({ message: "Failed to respond to meeting" });
+    }
+  });
+
+  app.get("/api/meetings/:id", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const meetingId = parseInt(req.params.id);
+      const meeting = await storage.getMeetingSuggestion(meetingId);
       
-      const messages = await storage.getDirectMessages(userId, otherUserId);
+      if (!meeting) {
+        return res.status(404).json({ message: "Meeting not found" });
+      }
       
-      const messagesWithSender = await Promise.all(
-        messages.map(async (message) => {
-          const sender = await storage.getUser(message.senderId);
-          return {
-            ...message,
-            sender,
-          };
+      res.json(meeting);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/meetings/:id", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const meetingId = parseInt(req.params.id);
+      const userId = req.user!.userId;
+      const { title, description, location, proposedDateTime, duration, isPrivate } = req.body;
+      
+      const meeting = await storage.getMeetingSuggestion(meetingId);
+      if (!meeting || meeting.suggestedById !== userId) {
+        return res.status(403).json({ message: "Unauthorized" });
+      }
+      
+      const updated = await storage.updateMeetingSuggestion(meetingId, {
+        title,
+        description,
+        location,
+        proposedDateTime: new Date(proposedDateTime),
+        duration,
+        isPrivate,
+      });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/meetings/:id", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const meetingId = parseInt(req.params.id);
+      const userId = req.user!.userId;
+      
+      const meeting = await storage.getMeetingSuggestion(meetingId);
+      if (!meeting || meeting.suggestedById !== userId) {
+        return res.status(403).json({ message: "Unauthorized" });
+      }
+      
+      if (meeting.backgroundImageUrl) {
+        try {
+          const { deleteImageFromCloudinary } = await import('./cloudinary');
+          await deleteImageFromCloudinary(meeting.backgroundImageUrl);
+        } catch (error) {
+          console.error("Error deleting meeting background image:", error);
+        }
+      }
+      
+      await storage.deleteMeetingSuggestion(meetingId);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/meetings/:id/join", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const meetingId = parseInt(req.params.id);
+      const userId = req.user!.userId;
+      
+      await storage.joinMeeting(meetingId, userId);
+      res.json({ message: "Joined meeting successfully" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/meetings/:id/leave", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const meetingId = parseInt(req.params.id);
+      const userId = req.user!.userId;
+      
+      await storage.leaveMeeting(meetingId, userId);
+      res.json({ message: "Left meeting successfully" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/meetings/:id/participants", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const meetingId = parseInt(req.params.id);
+      const participants = await storage.getMeetingParticipants(meetingId);
+      
+      const participantsWithUsers = await Promise.all(
+        participants.map(async (p) => {
+          const user = await storage.getUser(p.userId);
+          return user;
         })
       );
       
-      res.json(messagesWithSender);
-    } catch (error) {
-      console.error("Error fetching direct messages:", error);
-      res.status(500).json({ message: "Failed to fetch direct messages" });
+      res.json(participantsWithUsers.filter(Boolean));
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
     }
   });
 
-  app.post('/api/direct-messages', requireAuth, async (req: AuthRequest, res) => {
+  app.post('/api/meetings/:id/respond', requireAuth, async (req: AuthRequest, res) => {
     try {
+      const meetingId = parseInt(req.params.id);
       const userId = req.user!.userId;
-      const { recipientId, content } = req.body;
-      
-      const message = await storage.sendDirectMessage({
-        senderId: userId,
-        recipientId,
-        content,
+      const validatedData = insertMeetingResponseSchema.parse({
+        ...req.body,
+        meetingId,
+        userId
       });
-      
-      res.status(201).json(message);
+      const response = await storage.respondToMeeting(validatedData);
+      res.status(201).json(response);
     } catch (error) {
-      console.error("Error sending direct message:", error);
-      res.status(500).json({ message: "Failed to send direct message" });
+      console.error("Error responding to meeting:", error);
+      res.status(400).json({ message: "Failed to respond to meeting" });
     }
   });
 
-  app.get('/api/friends/requests', requireAuth, async (req: AuthRequest, res) => {
+  app.post("/api/meetings/:id/background", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const meetingId = parseInt(req.params.id);
+      const userId = req.user!.userId;
+      const { image } = req.body;
+      
+      const meeting = await storage.getMeetingSuggestion(meetingId);
+      if (!meeting || meeting.suggestedById !== userId) {
+        return res.status(403).json({ message: "Unauthorized" });
+      }
+      
+      if (meeting.backgroundImageUrl) {
+        const { deleteImageFromCloudinary } = await import('./cloudinary');
+        await deleteImageFromCloudinary(meeting.backgroundImageUrl);
+      }
+      
+      const { uploadImageToCloudinary } = await import('./cloudinary');
+      const imageUrl = await uploadImageToCloudinary(image, 'meetings');
+      
+      const updated = await storage.updateMeetingSuggestion(meetingId, { backgroundImageUrl: imageUrl });
+      res.json(updated);
+    } catch (error: any) {
+      console.error("Error uploading meeting background:", error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get('/api/meeting-responses/user', requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.userId;
-      const requests = await storage.getFriendRequests(userId);
-      res.json(requests);
-    } catch (error) {
-      console.error("Error fetching friend requests:", error);
-      res.status(500).json({ message: "Failed to fetch friend requests" });
+      const responses = await storage.getAllMeetingResponsesForUser(userId);
+      res.json(responses);
+    } catch (error: any) {
+      console.error("Error fetching meeting responses:", error?.message || error);
+      res.json([]);
     }
   });
 
-  app.post('/api/friends/request', requireAuth, async (req: AuthRequest, res) => {
+  // ================================
+  // GROUP / CHAT ROUTES
+  // ================================
+
+  app.get('/api/chat-groups', requireAuth, async (req: AuthRequest, res) => {
     try {
-      const requesterId = req.user!.userId;
-      const { addresseeId } = req.body;
-      const friendship = await storage.sendFriendRequest(requesterId, addresseeId);
-      res.status(201).json(friendship);
+      const userId = req.user!.userId;
+      const groups = await storage.getChatGroups(userId);
+      res.json(groups);
     } catch (error) {
-      console.error("Error sending friend request:", error);
-      res.status(500).json({ message: "Failed to send friend request" });
+      console.error("Error fetching chat groups:", error);
+      res.status(500).json({ message: "Failed to fetch chat groups" });
     }
   });
 
-  app.post('/api/friends/accept/:id', requireAuth, async (req: AuthRequest, res) => {
+  app.get('/api/chat-groups/all', requireAuth, async (req: AuthRequest, res) => {
     try {
-      const requestId = parseInt(req.params.id);
-      await storage.acceptFriendRequest(requestId);
-      res.status(204).send();
+      const groups = await storage.getAllChatGroups();
+      res.json(groups);
     } catch (error) {
-      console.error("Error accepting friend request:", error);
-      res.status(500).json({ message: "Failed to accept friend request" });
-    }
-  });
-
-  app.post('/api/friends/reject/:id', requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const requestId = parseInt(req.params.id);
-      await storage.rejectFriendRequest(requestId);
-      res.status(204).send();
-    } catch (error) {
-      console.error("Error rejecting friend request:", error);
-      res.status(500).json({ message: "Failed to reject friend request" });
-    }
-  });
-
-  app.post('/api/users/search', requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const { tags, location } = req.body;
-      const users = await storage.searchUsersByTags(tags || [], location);
-      res.json(users);
-    } catch (error) {
-      console.error("Error searching users:", error);
-      res.status(500).json({ message: "Failed to search users" });
-    }
-  });
-
-  app.post('/api/users/search/location', requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const { latitude, longitude, radius } = req.body;
-      const users = await storage.searchUsersByLocation(latitude, longitude, radius);
-      res.json(users);
-    } catch (error) {
-      console.error("Error searching users by location:", error);
-      res.status(500).json({ message: "Failed to search users by location" });
+      console.error("Error fetching all groups:", error);
+      res.status(500).json({ message: "Failed to fetch groups" });
     }
   });
 
@@ -535,14 +631,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user!.userId;
       const { name, description, isPrivate, image } = req.body;
 
-      // Check group limit
       const existingGroups = await storage.getChatGroups(userId);
       const userCreatedGroups = existingGroups.filter(g => g.createdById === userId);
       if (userCreatedGroups.length >= 4) {
         return res.status(400).json({ message: "You can only create up to 4 groups" });
       }
 
-      // Create group first
       const group = await storage.createChatGroup({
         name,
         description,
@@ -550,7 +644,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         isPrivate: isPrivate || false,
       });
 
-      // Upload image if provided
       if (image) {
         try {
           const { uploadImageToCloudinary } = await import('./cloudinary');
@@ -559,13 +652,105 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.json({ ...group, backgroundImageUrl: imageUrl });
         } catch (error) {
           console.error("Error uploading group background:", error);
-          // Delete the group if image upload fails
           await storage.deleteChatGroup(group.id);
           return res.status(500).json({ message: "Failed to upload image" });
         }
       }
 
       res.json(group);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/chat-groups/:id", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const groupId = parseInt(req.params.id);
+      const group = await storage.getChatGroup(groupId);
+      
+      if (!group) {
+        return res.status(404).json({ message: "Group not found" });
+      }
+      
+      res.json(group);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/chat-groups/:id", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const groupId = parseInt(req.params.id);
+      const userId = req.user!.userId;
+      const { name, description, isPrivate } = req.body;
+      
+      const group = await storage.getChatGroup(groupId);
+      if (!group || group.createdById !== userId) {
+        return res.status(403).json({ message: "Unauthorized" });
+      }
+      
+      const updated = await storage.updateChatGroup(groupId, { name, description, isPrivate });
+      res.json(updated);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/chat-groups/:id", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const groupId = parseInt(req.params.id);
+      const userId = req.user!.userId;
+      
+      const group = await storage.getChatGroup(groupId);
+      if (!group || group.createdById !== userId) {
+        return res.status(403).json({ message: "Unauthorized" });
+      }
+      
+      if (group.backgroundImageUrl) {
+        try {
+          const { deleteImageFromCloudinary } = await import('./cloudinary');
+          await deleteImageFromCloudinary(group.backgroundImageUrl);
+        } catch (error) {
+          console.error("Error deleting group background image:", error);
+        }
+      }
+      
+      await storage.deleteChatGroup(groupId);
+      res.status(204).send();
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/chat-groups/:id/join", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const groupId = parseInt(req.params.id);
+      const userId = req.user!.userId;
+      
+      await storage.joinChatGroup(groupId, userId);
+      res.json({ message: "Joined group successfully" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/chat-groups/:id/leave", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const groupId = parseInt(req.params.id);
+      const userId = req.user!.userId;
+      
+      await storage.leaveChatGroup(groupId, userId);
+      res.json({ message: "Left group successfully" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/chat-groups/:id/members", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const groupId = parseInt(req.params.id);
+      const members = await storage.getChatGroupMembers(groupId);
+      res.json(members);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -640,113 +825,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get single group
-  app.get("/api/chat-groups/:id", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const groupId = parseInt(req.params.id);
-      const group = await storage.getChatGroup(groupId);
-      
-      if (!group) {
-        return res.status(404).json({ message: "Group not found" });
-      }
-      
-      res.json(group);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
-    }
-  });
-
-  // Get group members
-  app.get("/api/chat-groups/:id/members", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const groupId = parseInt(req.params.id);
-      const members = await storage.getChatGroupMembers(groupId);
-      res.json(members);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
-    }
-  });
-
-  // Join group
-  app.post("/api/chat-groups/:id/join", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const groupId = parseInt(req.params.id);
-      const userId = req.user!.userId;
-      
-      await storage.addChatGroupMember(groupId, userId);
-      res.json({ message: "Joined group successfully" });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
-    }
-  });
-
-  // Update group
-  app.put("/api/chat-groups/:id", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const groupId = parseInt(req.params.id);
-      const userId = req.user!.userId;
-      const { name, description, isPrivate } = req.body;
-      
-      const group = await storage.getChatGroup(groupId);
-      if (!group || group.createdById !== userId) {
-        return res.status(403).json({ message: "Unauthorized" });
-      }
-      
-      const updated = await storage.updateChatGroup(groupId, { name, description, isPrivate });
-      res.json(updated);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
-    }
-  });
-
-  // Delete group (with image cleanup)
-  app.delete("/api/chat-groups/:id", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const groupId = parseInt(req.params.id);
-      const userId = req.user!.userId;
-      
-      const group = await storage.getChatGroup(groupId);
-      if (!group || group.createdById !== userId) {
-        return res.status(403).json({ message: "Unauthorized" });
-      }
-      
-      // Delete background image from Cloudinary if it exists
-      if (group.backgroundImageUrl) {
-        try {
-          const { deleteImageFromCloudinary } = await import('./cloudinary');
-          await deleteImageFromCloudinary(group.backgroundImageUrl);
-        } catch (error) {
-          console.error("Error deleting group background image:", error);
-          // Continue with group deletion even if image deletion fails
-        }
-      }
-      
-      await storage.deleteChatGroup(groupId);
-      res.status(204).send();
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
-    }
-  });
-
-  // Upload background image for group
   app.post("/api/chat-groups/:id/background", requireAuth, async (req: AuthRequest, res) => {
     try {
       const groupId = parseInt(req.params.id);
       const userId = req.user!.userId;
-      const { image } = req.body; // base64 image string
+      const { image } = req.body;
       
       const group = await storage.getChatGroup(groupId);
       if (!group || group.createdById !== userId) {
         return res.status(403).json({ message: "Unauthorized" });
       }
       
-      // Delete old image if exists
       if (group.backgroundImageUrl) {
         const { deleteImageFromCloudinary } = await import('./cloudinary');
         await deleteImageFromCloudinary(group.backgroundImageUrl);
       }
       
-      // Upload new image
       const { uploadImageToCloudinary } = await import('./cloudinary');
       const imageUrl = await uploadImageToCloudinary(image, 'groups');
       
@@ -758,182 +852,117 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Upload background image for meeting
-  app.post("/api/meetings/:id/background", requireAuth, async (req: AuthRequest, res) => {
+  // ================================
+  // DIRECT MESSAGE ROUTES
+  // ================================
+
+  app.get('/api/direct-messages/:otherUserId', requireAuth, async (req: AuthRequest, res) => {
     try {
-      const meetingId = parseInt(req.params.id);
       const userId = req.user!.userId;
-      const { image } = req.body; // base64 image string
+      const otherUserId = req.params.otherUserId;
       
-      const meeting = await storage.getMeetingSuggestion(meetingId);
-      if (!meeting || meeting.suggestedById !== userId) {
-        return res.status(403).json({ message: "Unauthorized" });
-      }
+      const messages = await storage.getDirectMessages(userId, otherUserId);
       
-      // Delete old image if exists
-      if (meeting.backgroundImageUrl) {
-        const { deleteImageFromCloudinary } = await import('./cloudinary');
-        await deleteImageFromCloudinary(meeting.backgroundImageUrl);
-      }
-      
-      // Upload new image
-      const { uploadImageToCloudinary } = await import('./cloudinary');
-      const imageUrl = await uploadImageToCloudinary(image, 'meetings');
-      
-      const updated = await storage.updateMeetingSuggestion(meetingId, { backgroundImageUrl: imageUrl });
-      res.json(updated);
-    } catch (error: any) {
-      console.error("Error uploading meeting background:", error);
-      res.status(500).json({ message: error.message });
-    }
-  });
-
-  // Get single meeting
-  app.get("/api/meetings/:id", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const meetingId = parseInt(req.params.id);
-      const meeting = await storage.getMeetingSuggestion(meetingId);
-      
-      if (!meeting) {
-        return res.status(404).json({ message: "Meeting not found" });
-      }
-      
-      res.json(meeting);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
-    }
-  });
-
-  app.get("/api/meetings/:id/participants", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const meetingId = parseInt(req.params.id);
-      const participants = await storage.getMeetingParticipants(meetingId);
-      
-      // Get full user details for each participant
-      const participantsWithUsers = await Promise.all(
-        participants.map(async (p) => {
-          const user = await storage.getUser(p.userId);
-          return user;
+      const messagesWithSender = await Promise.all(
+        messages.map(async (message) => {
+          const sender = await storage.getUser(message.senderId);
+          return {
+            ...message,
+            sender,
+          };
         })
       );
       
-      // Filter out any null users
-      res.json(participantsWithUsers.filter(Boolean));
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
-    }
-  });
-
-  // Join meeting
-  app.post("/api/meetings/:id/join", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const meetingId = parseInt(req.params.id);
-      const userId = req.user!.userId;
-      
-      await storage.addMeetingParticipant(meetingId, userId);
-      res.json({ message: "Joined meeting successfully" });
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
-    }
-  });
-
-  // Update meeting
-  app.put("/api/meetings/:id", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const meetingId = parseInt(req.params.id);
-      const userId = req.user!.userId;
-      const { title, description, location, proposedDateTime, duration, isPrivate } = req.body;
-      
-      const meeting = await storage.getMeetingSuggestion(meetingId);
-      if (!meeting || meeting.suggestedById !== userId) {
-        return res.status(403).json({ message: "Unauthorized" });
-      }
-      
-      const updated = await storage.updateMeetingSuggestion(meetingId, {
-        title,
-        description,
-        location,
-        proposedDateTime: new Date(proposedDateTime),
-        duration,
-        isPrivate,
-      });
-      res.json(updated);
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
-    }
-  });
-
-  // Delete meeting (with image cleanup)
-  app.delete("/api/meetings/:id", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const meetingId = parseInt(req.params.id);
-      const userId = req.user!.userId;
-      
-      const meeting = await storage.getMeetingSuggestion(meetingId);
-      if (!meeting || meeting.suggestedById !== userId) {
-        return res.status(403).json({ message: "Unauthorized" });
-      }
-      
-      // Delete background image from Cloudinary if it exists
-      if (meeting.backgroundImageUrl) {
-        try {
-          const { deleteImageFromCloudinary } = await import('./cloudinary');
-          await deleteImageFromCloudinary(meeting.backgroundImageUrl);
-        } catch (error) {
-          console.error("Error deleting meeting background image:", error);
-          // Continue with meeting deletion even if image deletion fails
-        }
-      }
-      
-      await storage.deleteMeetingSuggestion(meetingId);
-      res.status(204).send();
-    } catch (error: any) {
-      res.status(500).json({ message: error.message });
-    }
-  });
-
-  app.post('/api/meetings/:id/respond', requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const meetingId = parseInt(req.params.id);
-      const userId = req.user!.userId;
-      const validatedData = insertMeetingResponseSchema.parse({
-        ...req.body,
-        meetingId,
-        userId
-      });
-      const response = await storage.respondToMeeting(validatedData);
-      res.status(201).json(response);
+      res.json(messagesWithSender);
     } catch (error) {
-      console.error("Error responding to meeting:", error);
-      res.status(400).json({ message: "Failed to respond to meeting" });
+      console.error("Error fetching direct messages:", error);
+      res.status(500).json({ message: "Failed to fetch direct messages" });
     }
   });
 
-  app.get('/api/meetings', requireAuth, async (req: AuthRequest, res) => {
+  app.post('/api/direct-messages', requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.userId;
-      const meetings = await storage.getAllMeetingsForUser(userId);
+      const { recipientId, content } = req.body;
+      
+      const message = await storage.sendDirectMessage({
+        senderId: userId,
+        recipientId,
+        content,
+      });
+      
+      res.status(201).json(message);
+    } catch (error) {
+      console.error("Error sending direct message:", error);
+      res.status(500).json({ message: "Failed to send direct message" });
+    }
+  });
+
+  // ================================
+  // SEARCH ROUTES
+  // ================================
+
+  app.get('/api/search/users', requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const { q } = req.query;
+      
+      if (!q || typeof q !== 'string' || q.length < 2) {
+        return res.json([]);
+      }
+      
+      const users = await storage.searchUsersByTags([], q);
+      res.json(users);
+    } catch (error) {
+      console.error("Error searching users:", error);
+      res.status(500).json({ message: "Failed to search users" });
+    }
+  });
+
+  app.get("/api/search/chats", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.userId;
+      const { tagIds } = req.query;
+      
+      if (!tagIds) {
+        return res.status(400).json({ error: "Tag IDs are required" });
+      }
+      
+      const tagIdArray = Array.isArray(tagIds) 
+        ? tagIds.map((id: string) => parseInt(id))
+        : [parseInt(tagIds as string)];
+      
+      const chats = await storage.searchTaggedChats(userId, tagIdArray);
+      res.json(chats);
+    } catch (error) {
+      console.error("Error searching tagged chats:", error);
+      res.status(500).json({ error: "Failed to search tagged chats" });
+    }
+  });
+
+  app.get("/api/search/meetings", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.userId;
+      const { tagIds } = req.query;
+      
+      if (!tagIds) {
+        return res.status(400).json({ error: "Tag IDs are required" });
+      }
+      
+      const tagIdArray = Array.isArray(tagIds) 
+        ? tagIds.map((id: string) => parseInt(id))
+        : [parseInt(tagIds as string)];
+      
+      const meetings = await storage.searchTaggedMeetings(userId, tagIdArray);
       res.json(meetings);
     } catch (error) {
-      console.error("Error fetching meetings:", error);
-      res.status(500).json({ message: "Failed to fetch meetings" });
+      console.error("Error searching tagged meetings:", error);
+      res.status(500).json({ error: "Failed to search tagged meetings" });
     }
   });
 
-  app.post('/api/meetings/respond', requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const userId = req.user!.userId;
-      const validatedData = insertMeetingResponseSchema.parse({
-        ...req.body,
-        userId
-      });
-      const response = await storage.respondToMeeting(validatedData);
-      res.status(201).json(response);
-    } catch (error) {
-      console.error("Error responding to meeting:", error);
-      res.status(400).json({ message: "Failed to respond to meeting" });
-    }
-  });
+  // ================================
+  // CALENDAR CONNECTION ROUTES
+  // ================================
 
   app.get("/api/connections", requireAuth, async (req: AuthRequest, res) => {
     try {
@@ -979,6 +1008,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // ================================
+  // CALENDAR ROUTES
+  // ================================
+
   app.get("/api/calendars", requireAuth, async (req: AuthRequest, res) => {
     try {
       const userId = req.user!.userId;
@@ -999,76 +1032,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/events", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const userId = req.user!.userId;
-      const events = await storage.getEvents(userId);
-      res.json(events);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch events" });
-    }
-  });
-
-  app.get("/api/events/range", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const userId = req.user!.userId;
-      const { startDate, endDate } = req.query;
-      
-      if (!startDate || !endDate) {
-        return res.status(400).json({ error: "startDate and endDate are required" });
-      }
-
-      const events = await storage.getEventsByDateRange(
-        userId,
-        new Date(startDate as string),
-        new Date(endDate as string)
-      );
-      res.json(events);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch events" });
-    }
-  });
-
-  app.post("/api/events", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const validatedData = insertEventSchema.parse(req.body);
-      const event = await storage.createEvent(validatedData);
-      res.status(201).json(event);
-    } catch (error) {
-      res.status(400).json({ error: "Invalid event data" });
-    }
-  });
-
-  app.get("/api/conflicts", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const userId = req.user!.userId;
-      const conflicts = await storage.getConflicts(userId);
-      res.json(conflicts);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch conflicts" });
-    }
-  });
-
-  app.get("/api/conflicts/unresolved", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const userId = req.user!.userId;
-      const conflicts = await storage.getUnresolvedConflicts(userId);
-      res.json(conflicts);
-    } catch (error) {
-      res.status(500).json({ error: "Failed to fetch unresolved conflicts" });
-    }
-  });
-
-  app.post("/api/conflicts/:id/resolve", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const id = parseInt(req.params.id);
-      await storage.resolveConflict(id);
-      res.status(204).send();
-    } catch (error) {
-      res.status(400).json({ error: "Failed to resolve conflict" });
-    }
-  });
-
   app.post("/api/calendars/:id/share", requireAuth, async (req: AuthRequest, res) => {
     try {
       const calendarId = parseInt(req.params.id);
@@ -1085,6 +1048,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(400).json({ error: "Failed to share calendar" });
     }
   });
+
+  // ================================
+  // CALENDAR SHARE ROUTES
+  // ================================
 
   app.get("/api/calendar-shares", requireAuth, async (req: AuthRequest, res) => {
     try {
@@ -1148,8 +1115,167 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const share = await storage.updateCalendarSharePermission(shareId, permission);
       res.json(share);
     } catch (error) {
-    console.error("Error updating calendar share permission:", error);
+      console.error("Error updating calendar share permission:", error);
       res.status(400).json({ error: "Failed to update calendar share permission" });
+    }
+  });
+
+  // ================================
+  // EVENT ROUTES
+  // ================================
+
+  app.get("/api/events", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.userId;
+      const events = await storage.getEvents(userId);
+      res.json(events);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch events" });
+    }
+  });
+
+  app.get("/api/events/range", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.userId;
+      const { startDate, endDate } = req.query;
+      
+      if (!startDate || !endDate) {
+        return res.status(400).json({ error: "startDate and endDate are required" });
+      }
+
+      const events = await storage.getEventsByDateRange(
+        userId,
+        new Date(startDate as string),
+        new Date(endDate as string)
+      );
+      res.json(events);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch events" });
+    }
+  });
+
+  app.post("/api/events", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const validatedData = insertEventSchema.parse(req.body);
+      const event = await storage.createEvent(validatedData);
+      res.status(201).json(event);
+    } catch (error) {
+      res.status(400).json({ error: "Invalid event data" });
+    }
+  });
+
+  app.get("/api/events/:id/comments", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const eventId = parseInt(req.params.id);
+      const comments = await storage.getEventComments(eventId);
+      res.json(comments);
+    } catch (error) {
+      console.error("Error fetching event comments:", error);
+      res.status(500).json({ error: "Failed to fetch event comments" });
+    }
+  });
+
+  app.post("/api/events/:id/comments", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const eventId = parseInt(req.params.id);
+      const userId = req.user!.userId;
+      const validatedData = insertEventCommentSchema.parse({
+        ...req.body,
+        eventId,
+        userId
+      });
+      const comment = await storage.addEventComment(validatedData);
+      res.status(201).json(comment);
+    } catch (error) {
+      console.error("Error adding event comment:", error);
+      res.status(400).json({ error: "Failed to add event comment" });
+    }
+  });
+
+  app.get("/api/events/:id/changes", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const eventId = parseInt(req.params.id);
+      const changes = await storage.getEventChangeLogs(eventId);
+      res.json(changes);
+    } catch (error) {
+      console.error("Error fetching event changes:", error);
+      res.status(500).json({ error: "Failed to fetch event changes" });
+    }
+  });
+
+  // ================================
+  // COMMENT ROUTES
+  // ================================
+
+  app.put("/api/comments/:id", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const commentId = parseInt(req.params.id);
+      const { comment } = req.body;
+      const updatedComment = await storage.updateEventComment(commentId, comment);
+      res.json(updatedComment);
+    } catch (error) {
+      console.error("Error updating event comment:", error);
+      res.status(400).json({ error: "Failed to update event comment" });
+    }
+  });
+
+  app.delete("/api/comments/:id", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const commentId = parseInt(req.params.id);
+      await storage.deleteEventComment(commentId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting event comment:", error);
+      res.status(400).json({ error: "Failed to delete event comment" });
+    }
+  });
+
+  // ================================
+  // CONFLICT ROUTES
+  // ================================
+
+  app.get("/api/conflicts", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.userId;
+      const conflicts = await storage.getConflicts(userId);
+      res.json(conflicts);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch conflicts" });
+    }
+  });
+
+  app.get("/api/conflicts/unresolved", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.userId;
+      const conflicts = await storage.getUnresolvedConflicts(userId);
+      res.json(conflicts);
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch unresolved conflicts" });
+    }
+  });
+
+  app.post("/api/conflicts/:id/resolve", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      await storage.resolveConflict(id);
+      res.status(204).send();
+    } catch (error) {
+      res.status(400).json({ error: "Failed to resolve conflict" });
+    }
+  });
+
+  // ================================
+  // COLLABORATION ROUTES
+  // ================================
+
+  app.get("/api/collaborations", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.userId;
+      const collaborations = await storage.getCollaborations(userId);
+      res.json(collaborations);
+    } catch (error) {
+      console.error("Error fetching collaborations:", error);
+      res.status(500).json({ error: "Failed to fetch collaborations" });
     }
   });
 
@@ -1172,17 +1298,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error creating collaboration:", error);
       res.status(400).json({ error: "Failed to create collaboration" });
-    }
-  });
-
-  app.get("/api/collaborations", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const userId = req.user!.userId;
-      const collaborations = await storage.getCollaborations(userId);
-      res.json(collaborations);
-    } catch (error) {
-      console.error("Error fetching collaborations:", error);
-      res.status(500).json({ error: "Failed to fetch collaborations" });
     }
   });
 
@@ -1222,6 +1337,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/collaborations/:id/members", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const collaborationId = parseInt(req.params.id);
+      const members = await storage.getCollaborationMembers(collaborationId);
+      res.json(members);
+    } catch (error) {
+      console.error("Error fetching collaboration members:", error);
+      res.status(500).json({ error: "Failed to fetch collaboration members" });
+    }
+  });
+
   app.post("/api/collaborations/:id/members", requireAuth, async (req: AuthRequest, res) => {
     try {
       const collaborationId = parseInt(req.params.id);
@@ -1234,17 +1360,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error adding collaboration member:", error);
       res.status(400).json({ error: "Failed to add collaboration member" });
-    }
-  });
-
-  app.get("/api/collaborations/:id/members", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const collaborationId = parseInt(req.params.id);
-      const members = await storage.getCollaborationMembers(collaborationId);
-      res.json(members);
-    } catch (error) {
-      console.error("Error fetching collaboration members:", error);
-      res.status(500).json({ error: "Failed to fetch collaboration members" });
     }
   });
 
@@ -1273,6 +1388,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/collaborations/:id/calendars", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const collaborationId = parseInt(req.params.id);
+      const calendars = await storage.getCollaborationCalendars(collaborationId);
+      res.json(calendars);
+    } catch (error) {
+      console.error("Error fetching collaboration calendars:", error);
+      res.status(500).json({ error: "Failed to fetch collaboration calendars" });
+    }
+  });
+
   app.post("/api/collaborations/:id/calendars", requireAuth, async (req: AuthRequest, res) => {
     try {
       const collaborationId = parseInt(req.params.id);
@@ -1290,17 +1416,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/collaborations/:id/calendars", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const collaborationId = parseInt(req.params.id);
-      const calendars = await storage.getCollaborationCalendars(collaborationId);
-      res.json(calendars);
-    } catch (error) {
-      console.error("Error fetching collaboration calendars:", error);
-      res.status(500).json({ error: "Failed to fetch collaboration calendars" });
-    }
-  });
-
   app.delete("/api/collaborations/:id/calendars/:calendarId", requireAuth, async (req: AuthRequest, res) => {
     try {
       const collaborationId = parseInt(req.params.id);
@@ -1313,86 +1428,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/events/:id/comments", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const eventId = parseInt(req.params.id);
-      const userId = req.user!.userId;
-      const validatedData = insertEventCommentSchema.parse({
-        ...req.body,
-        eventId,
-        userId
-      });
-      const comment = await storage.addEventComment(validatedData);
-      res.status(201).json(comment);
-    } catch (error) {
-      console.error("Error adding event comment:", error);
-      res.status(400).json({ error: "Failed to add event comment" });
-    }
-  });
-
-  app.get("/api/events/:id/comments", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const eventId = parseInt(req.params.id);
-      const comments = await storage.getEventComments(eventId);
-      res.json(comments);
-    } catch (error) {
-      console.error("Error fetching event comments:", error);
-      res.status(500).json({ error: "Failed to fetch event comments" });
-    }
-  });
-
-  app.put("/api/comments/:id", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const commentId = parseInt(req.params.id);
-      const { comment } = req.body;
-      const updatedComment = await storage.updateEventComment(commentId, comment);
-      res.json(updatedComment);
-    } catch (error) {
-      console.error("Error updating event comment:", error);
-      res.status(400).json({ error: "Failed to update event comment" });
-    }
-  });
-
-  app.delete("/api/comments/:id", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const commentId = parseInt(req.params.id);
-      await storage.deleteEventComment(commentId);
-      res.status(204).send();
-    } catch (error) {
-      console.error("Error deleting event comment:", error);
-      res.status(400).json({ error: "Failed to delete event comment" });
-    }
-  });
-
-  app.get("/api/events/:id/changes", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const eventId = parseInt(req.params.id);
-      const changes = await storage.getEventChangeLogs(eventId);
-      res.json(changes);
-    } catch (error) {
-      console.error("Error fetching event changes:", error);
-      res.status(500).json({ error: "Failed to fetch event changes" });
-    }
-  });
-
   // ================================
-  // Tag Routes
+  // TAG ROUTES
   // ================================
-
-  app.post("/api/tags", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const userId = req.user!.userId;
-      const validatedData = insertTagSchema.parse({
-        ...req.body,
-        userId
-      });
-      const tag = await storage.createTag(validatedData);
-      res.status(201).json(tag);
-    } catch (error) {
-      console.error("Error creating tag:", error);
-      res.status(400).json({ error: "Failed to create tag" });
-    }
-  });
 
   app.get("/api/tags", requireAuth, async (req: AuthRequest, res) => {
     try {
@@ -1406,6 +1444,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching tags:", error);
       res.status(500).json({ error: "Failed to fetch tags" });
+    }
+  });
+
+  app.post("/api/tags", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const userId = req.user!.userId;
+      const validatedData = insertTagSchema.parse({
+        ...req.body,
+        userId
+      });
+      const tag = await storage.createTag(validatedData);
+      res.status(201).json(tag);
+    } catch (error) {
+      console.error("Error creating tag:", error);
+      res.status(400).json({ error: "Failed to create tag" });
     }
   });
 
@@ -1431,6 +1484,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/chats/:chatId/tags", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const chatId = req.params.chatId;
+      const tags = await storage.getChatTags(chatId);
+      res.json(tags);
+    } catch (error) {
+      console.error("Error fetching chat tags:", error);
+      res.status(500).json({ error: "Failed to fetch chat tags" });
+    }
+  });
+
   app.post("/api/chats/:chatId/tags", requireAuth, async (req: AuthRequest, res) => {
     try {
       const chatId = req.params.chatId;
@@ -1448,17 +1512,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/chats/:chatId/tags", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const chatId = req.params.chatId;
-      const tags = await storage.getChatTags(chatId);
-      res.json(tags);
-    } catch (error) {
-      console.error("Error fetching chat tags:", error);
-      res.status(500).json({ error: "Failed to fetch chat tags" });
-    }
-  });
-
   app.delete("/api/chats/:chatId/tags/:tagId", requireAuth, async (req: AuthRequest, res) => {
     try {
       const chatId = req.params.chatId;
@@ -1468,6 +1521,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error removing chat tag:", error);
       res.status(400).json({ error: "Failed to remove chat tag" });
+    }
+  });
+
+  app.get("/api/meetings/:meetingId/tags", requireAuth, async (req: AuthRequest, res) => {
+    try {
+      const meetingId = parseInt(req.params.meetingId);
+      const tags = await storage.getMeetingTags(meetingId);
+      res.json(tags);
+    } catch (error) {
+      console.error("Error fetching meeting tags:", error);
+      res.status(500).json({ error: "Failed to fetch meeting tags" });
     }
   });
 
@@ -1488,17 +1552,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.get("/api/meetings/:meetingId/tags", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const meetingId = parseInt(req.params.meetingId);
-      const tags = await storage.getMeetingTags(meetingId);
-      res.json(tags);
-    } catch (error) {
-      console.error("Error fetching meeting tags:", error);
-      res.status(500).json({ error: "Failed to fetch meeting tags" });
-    }
-  });
-
   app.delete("/api/meetings/:meetingId/tags/:tagId", requireAuth, async (req: AuthRequest, res) => {
     try {
       const meetingId = parseInt(req.params.meetingId);
@@ -1508,48 +1561,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error removing meeting tag:", error);
       res.status(400).json({ error: "Failed to remove meeting tag" });
-    }
-  });
-
-  app.get("/api/search/chats", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const userId = req.user!.userId;
-      const { tagIds } = req.query;
-      
-      if (!tagIds) {
-        return res.status(400).json({ error: "Tag IDs are required" });
-      }
-      
-      const tagIdArray = Array.isArray(tagIds) 
-        ? tagIds.map((id: string) => parseInt(id))
-        : [parseInt(tagIds as string)];
-      
-      const chats = await storage.searchTaggedChats(userId, tagIdArray);
-      res.json(chats);
-    } catch (error) {
-      console.error("Error searching tagged chats:", error);
-      res.status(500).json({ error: "Failed to search tagged chats" });
-    }
-  });
-
-  app.get("/api/search/meetings", requireAuth, async (req: AuthRequest, res) => {
-    try {
-      const userId = req.user!.userId;
-      const { tagIds } = req.query;
-      
-      if (!tagIds) {
-        return res.status(400).json({ error: "Tag IDs are required" });
-      }
-      
-      const tagIdArray = Array.isArray(tagIds) 
-        ? tagIds.map((id: string) => parseInt(id))
-        : [parseInt(tagIds as string)];
-      
-      const meetings = await storage.searchTaggedMeetings(userId, tagIdArray);
-      res.json(meetings);
-    } catch (error) {
-      console.error("Error searching tagged meetings:", error);
-      res.status(500).json({ error: "Failed to search tagged meetings" });
     }
   });
 

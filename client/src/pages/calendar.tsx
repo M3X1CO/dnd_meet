@@ -7,12 +7,14 @@ import { ComparisonModal } from "@/components/comparison-modal";
 import { LoadingSpinner } from "@/components/loading-spinner";
 import { NavigationMenu } from "@/components/navigation-menu";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/useAuth";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { CalendarConnection, Event } from "@shared/schema";
 
 type ViewMode = 'month' | 'week' | 'day';
 
 export default function Calendar() {
+  const { user } = useAuth();
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isComparisonModalOpen, setIsComparisonModalOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -28,7 +30,7 @@ export default function Calendar() {
   });
 
   const { data: meetings = [] } = useQuery<any[]>({
-    queryKey: ['/api/meetings'],
+    queryKey: ['/api/meetings/all'],
   });
 
   console.log('Calendar meetings data:', meetings);
@@ -176,6 +178,7 @@ export default function Calendar() {
 		  meetings={meetings}
                   connections={connections}
                   viewMode={viewMode}
+                  currentUserId={user?.id}
                 />
               </div>
             </div>

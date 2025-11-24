@@ -1,7 +1,7 @@
 import { AlertTriangle } from "lucide-react";
 import type { Event, CalendarConnection } from "@shared/schema";
 
-  const today = new Date();
+const today = new Date();
 
 interface CalendarGridProps {
   currentDate: Date;
@@ -9,9 +9,10 @@ interface CalendarGridProps {
   meetings?: any[];
   connections: CalendarConnection[];
   viewMode: 'month' | 'week' | 'day';
+  currentUserId?: string;
 }
 
-export function CalendarGrid({ currentDate, events, meetings = [], connections, viewMode }: CalendarGridProps) {
+export function CalendarGrid({ currentDate, events, meetings = [], connections, viewMode, currentUserId }: CalendarGridProps) {
   const getEventsForDate = (date: Date) => {
     const calendarEvents = events.filter(event => {
       const eventDate = new Date(event.startTime);
@@ -29,12 +30,17 @@ export function CalendarGrid({ currentDate, events, meetings = [], connections, 
       isAllDay: false,
       location: meeting.location,
       description: meeting.description,
+      isMeetingCreatedByUser: meeting.suggestedById === currentUserId,
     }));
     
     return [...calendarEvents, ...meetingEvents];
   };
 
-  const getEventColor = (event: Event) => {
+  const getEventColor = (event: any) => {
+    if (event.isMeetingCreatedByUser) {
+      return 'bg-primary/20 text-primary-300 border-primary/50 ring-1 ring-primary/30';
+    }
+    
     const colors = [
       'bg-blue-500/20 text-blue-300 border-blue-500/50',
       'bg-orange-500/20 text-orange-300 border-orange-500/50',
@@ -42,7 +48,8 @@ export function CalendarGrid({ currentDate, events, meetings = [], connections, 
       'bg-purple-500/20 text-purple-300 border-purple-500/50',
       'bg-red-500/20 text-red-300 border-red-500/50',
     ];
-    return colors[event.id % colors.length];
+    const eventId = typeof event.id === 'string' ? parseInt(event.id.replace('meeting-', '')) : event.id;
+    return colors[eventId % colors.length];
   };
 
   const isToday = (date: Date) => {
@@ -75,8 +82,8 @@ function MonthView({
 }: {
   currentDate: Date;
   events: Event[];
-  getEventsForDate: (date: Date) => Event[];
-  getEventColor: (event: Event) => string;
+  getEventsForDate: (date: Date) => any[];
+  getEventColor: (event: any) => string;
   isToday: (date: Date) => boolean;
 }) {
   const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -217,8 +224,8 @@ function WeekView({
 }: {
   currentDate: Date;
   events: Event[];
-  getEventsForDate: (date: Date) => Event[];
-  getEventColor: (event: Event) => string;
+  getEventsForDate: (date: Date) => any[];
+  getEventColor: (event: any) => string;
   isToday: (date: Date) => boolean;
   formatTime: (date: Date) => string;
 }) {
@@ -323,8 +330,8 @@ function DayView({
 }: {
   currentDate: Date;
   events: Event[];
-  getEventsForDate: (date: Date) => Event[];
-  getEventColor: (event: Event) => string;
+  getEventsForDate: (date: Date) => any[];
+  getEventColor: (event: any) => string;
   isToday: (date: Date) => boolean;
   formatTime: (date: Date) => string;
 }) {
@@ -338,7 +345,7 @@ function DayView({
     });
   };
 
-  const getEventDuration = (event: Event) => {
+  const getEventDuration = (event: any) => {
     const start = new Date(event.startTime);
     const end = new Date(event.endTime);
     const durationMs = end.getTime() - start.getTime();
