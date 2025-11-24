@@ -8,6 +8,7 @@
 ./client/src/lib
 ./client/src/lib/utils.ts
 ./client/src/lib/queryClient.ts
+./client/src/lib/constants.ts
 ./client/src/lib/authUtils.ts
 ./client/src/main.tsx
 ./client/src/hooks

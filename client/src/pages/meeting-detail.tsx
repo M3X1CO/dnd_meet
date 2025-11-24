@@ -17,7 +17,7 @@ import { Calendar, MapPin, Clock, Users, ArrowLeft, Edit, UserPlus, Trash2 } fro
 import { format } from "date-fns";
 import { useState } from "react";
 import type { MeetingSuggestion, User as UserType } from "@shared/schema";
-import { MOBILE_DEFAULT_IMAGES } from "@/lib/constants";
+import { getBackgroundImage } from "@/lib/imageUtils";
 
 export default function MeetingDetail() {
   const params = useParams();
@@ -99,16 +99,6 @@ export default function MeetingDetail() {
     }
   };
 
-  const getBackgroundImage = () => {
-    if (!meeting) return null;
-    
-    if (isMobile && meeting.mobileImageIndex !== null && meeting.mobileImageIndex !== undefined) {
-      return MOBILE_DEFAULT_IMAGES[meeting.mobileImageIndex];
-    }
-    
-    return meeting.backgroundImageUrl;
-  };
-
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -137,7 +127,11 @@ export default function MeetingDetail() {
 
   const isCreator = meeting.suggestedById === user?.id;
   const isParticipant = participants.some(p => p.id === user?.id);
-  const backgroundImage = getBackgroundImage();
+  const backgroundImage = getBackgroundImage(
+    meeting.backgroundImageUrl,
+    meeting.mobileImageIndex,
+    isMobile
+  );
 
   return (
     <div className="min-h-screen bg-background">

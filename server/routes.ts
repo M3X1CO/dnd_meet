@@ -375,6 +375,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const parsedDateTime = new Date(proposedDateTime);
       
+      // Generate random mobile image index (0-9 for 10 images)
+      const randomMobileImageIndex = Math.floor(Math.random() * 10);
+      
       const meeting = await storage.createMeetingSuggestion({
         title: meetingData.title,
         description: meetingData.description,
@@ -385,6 +388,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         suggestedById: userId,
         groupId: chatGroupId || null,
         status: "accepted",
+        mobileImageIndex: randomMobileImageIndex,
       });
 
       if (image) {
@@ -637,11 +641,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "You can only create up to 4 groups" });
       }
 
+      // Generate random mobile image index (0-9 for 10 images)
+      const randomMobileImageIndex = Math.floor(Math.random() * 10);
+
       const group = await storage.createChatGroup({
         name,
         description,
         createdById: userId,
         isPrivate: isPrivate || false,
+        mobileImageIndex: randomMobileImageIndex,
       });
 
       if (image) {

@@ -17,7 +17,7 @@ import { Users, ArrowLeft, Edit, Crown, MessageCircle, Calendar, UserPlus, Lock,
 import { format } from "date-fns";
 import { useState } from "react";
 import type { ChatGroup, User as UserType } from "@shared/schema";
-import { MOBILE_DEFAULT_IMAGES } from "@/lib/constants";
+import { getBackgroundImage } from "@/lib/imageUtils";
 
 export default function GroupDetail() {
   const params = useParams();
@@ -93,16 +93,6 @@ export default function GroupDetail() {
     }
   };
 
-  const getBackgroundImage = () => {
-    if (!group) return null;
-    
-    if (isMobile && group.mobileImageIndex !== null && group.mobileImageIndex !== undefined) {
-      return MOBILE_DEFAULT_IMAGES[group.mobileImageIndex];
-    }
-    
-    return group.backgroundImageUrl;
-  };
-
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -131,7 +121,11 @@ export default function GroupDetail() {
 
   const isCreator = group.createdById === user?.id;
   const isMember = members.some((m) => m.id === user?.id);
-  const backgroundImage = getBackgroundImage();
+  const backgroundImage = getBackgroundImage(
+    group.backgroundImageUrl,
+    group.mobileImageIndex,
+    isMobile
+  );
 
   return (
     <div className="min-h-screen bg-background">
