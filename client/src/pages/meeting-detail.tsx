@@ -12,7 +12,7 @@ import { NavigationMenu } from "@/components/navigation-menu";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { useMobile } from "@/hooks/use-mobile";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { Calendar, MapPin, Clock, Users, ArrowLeft, Edit, UserPlus, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { useState } from "react";
@@ -25,7 +25,7 @@ export default function MeetingDetail() {
   const { user } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const isMobile = useMobile();
+  const isMobile = useIsMobile();
 
   const [isEditMode, setIsEditMode] = useState(false);
   const [editTitle, setEditTitle] = useState("");
